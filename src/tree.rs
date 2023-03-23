@@ -1,8 +1,10 @@
 use std::{
-    collections::{hash_map::DefaultHasher, HashMap as Map, HashSet as Set},
-    fmt::{self, Write},
+    collections::hash_map::DefaultHasher,
+    fmt,
     hash::{Hash, Hasher},
 };
+
+use indexmap::{IndexMap as Map, IndexSet as Set};
 
 use crate::{Backtrace, Symbol, SymbolTrace, Trace};
 
@@ -53,7 +55,7 @@ impl Tree {
     /// Format this [`Tree`] as a textual tree.
     fn display<W: fmt::Write>(
         &self,
-        mut f: &mut W,
+        f: &mut W,
         root: &Symbol,
         is_last: bool,
         prefix: &str,
@@ -64,14 +66,14 @@ impl Tree {
         let next;
 
         if is_last {
-            current = format!("{prefix}└╼\u{a0}{root_fmt}");
-            next = format!("{}\u{a0}\u{a0}\u{a0}", prefix);
+            current = format!("{prefix}└╼ {root_fmt}");
+            next = format!("{}   ", prefix);
         } else {
-            current = format!("{prefix}├╼\u{a0}{root_fmt}");
-            next = format!("{}│\u{a0}\u{a0}", prefix);
+            current = format!("{prefix}├╼ {root_fmt}");
+            next = format!("{}│  ", prefix);
         }
 
-        writeln!(&mut f, "{}", {
+        write!(f, "{}", {
             let mut current = current.chars();
             current.next().unwrap();
             current.next().unwrap();
@@ -82,6 +84,7 @@ impl Tree {
             let len = consequences.len();
             for (i, consequence) in consequences.enumerate() {
                 let is_last = i == len - 1;
+                writeln!(f)?;
                 self.display(f, consequence, is_last, &next)?;
             }
         }

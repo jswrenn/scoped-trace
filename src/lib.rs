@@ -1,7 +1,12 @@
-//! Capture scoped execution Trace from an instrumented closure.
+//! Capture scoped backtraces.
 //!
-//! ## Usage
-//! This program:
+//! Use [`Trace::root`] to define the upper unwinding bound of an execution
+//! trace, and [`Trace::leaf`] to define its lower bounds (the points at which
+//! backtraces are collected). The resulting traces are trees, since a single
+//! invocation of [`Trace::root`] may have multiple sub-invocations of
+//! [`Trace::leaf`].
+//!
+//! For example, running this program:
 //! ```
 //! use scoped_tree_trace::Trace;
 //!
@@ -23,7 +28,7 @@
 //!     Trace::leaf();
 //! }
 //! ```
-//! ...prints something like:
+//! ...will produce an output like:
 //! ```text
 //! ╼ inlining::main::{{closure}} at example.rs:4:38
 //!   ├╼ inlining::foo at example.rs:9:5
@@ -58,17 +63,17 @@ pub struct Trace {
 
 /// The ambiant backtracing context.
 struct Context {
-    /// The address of `Trace::trace` establishes an upper unwinding bound on
-    /// the backTrace in `Trace`.
+    /// The address of [`Trace::root`] establishes an upper unwinding bound on
+    /// the backtraces in `Trace`.
     root_addr: *const c_void,
-    /// The collection of backTrace collected beneath the invocation of
-    /// `Trace::trace`.
+    /// The collection of backtraces collected beneath the invocation of
+    /// [`Trace::root`].
     trace: Trace,
 }
 
 impl Trace {
-    /// Invokes `f`, returning its result and the collection of backTrace
-    /// captured at each sub-invocation of `Trace::capture`.
+    /// Invokes `f`, returning both its result and the collection of backtraces
+    /// captured at each sub-invocation of [`Trace::leaf`].
     pub fn root<F, R>(f: F) -> (R, Trace)
     where
         F: FnOnce() -> R,
@@ -99,9 +104,12 @@ impl Trace {
         (result, context.trace)
     }
 
-    /// If this is a sub-invocation of `Trace::trace`, capture a backtrace.
+    /// If this is a sub-invocation of [`Trace::root`], capture a backtrace.
     ///
-    /// The captured backtrace will be returned by `Trace::root`.
+    /// The captured backtrace will be returned by [`Trace::root`].
+    ///
+    /// Invoking this function does nothing when it is not a sub-invocation
+    /// [`Trace::root`].
     // This function is marked `#[inline(never)]` to ensure that it gets a distinct `Frame` in the
     // backtrace, below which frames should not be included in the backtrace (since they reflect the
     // internal implementation details of this crate).
@@ -114,8 +122,8 @@ impl Trace {
                 backtrace::trace(|frame| {
                     let below_root = !ptr::eq(frame.symbol_address(), context.root_addr);
 
-                    // only capture frames above `Trace::capture()` and below
-                    // `Trace::trace_inner()`.
+                    // only capture frames above `Trace::leaf()` and below
+                    // `Trace::root_inner()`.
                     if above_leaf && below_root {
                         frames.push(frame.to_owned().into());
                     }
@@ -124,7 +132,7 @@ impl Trace {
                         above_leaf = true;
                     }
 
-                    // only continue unwinding if we're below `Trace::trace`
+                    // only continue unwinding if we're below `Trace::root`
                     below_root
                 });
                 context.trace.backtraces.push(frames);
@@ -162,6 +170,7 @@ impl Context {
     {
         thread_local! {
             /// The current ambiant backtracing context, if any.
+            #[allow(clippy::declare_interior_mutable_const)]
             static CURRENT_CONTEXT: Cell<Option<Context>> = const { Cell::new(None) };
         }
 

@@ -1,5 +1,6 @@
-use scoped_tree_trace::Trace;
+use scoped_trace::Trace;
 
+#[allow(clippy::redundant_closure)]
 fn main() {
     let (_, trace) = Trace::root(|| foo());
     println!("{trace}");

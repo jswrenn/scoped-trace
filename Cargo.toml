@@ -1,9 +1,24 @@
 [package]
-name = "scoped-tree-trace"
-version = "0.1.0"
+name = "scoped-trace"
+version = "0.0.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+license = "Apache-2.0 OR MIT"
+readme = "README.md"
+rust-version = "1.61"
+description = "Collect scoped backtraces."
+repository = "https://github.com/jswrenn/scoped-trace"
+categories = ["development-tools::debugging"]
 
 [dependencies]
 backtrace = "0.3"
+indexmap = "1.9.2"
+
+[package.metadata.release]
+pre-release-replacements = [
+  {file="./CHANGELOG.md", search="Unreleased", replace="{{version}}"},
+  {file="./CHANGELOG.md", search="\\.\\.\\.HEAD", replace="...{{tag_name}}", exactly=1},
+  {file="./CHANGELOG.md", search="ReleaseDate", replace="{{date}}"},
+  {file="./CHANGELOG.md", search="<!-- next-header -->", replace="<!-- next-header -->\n\n## [Unreleased] - ReleaseDate", exactly=1},
+  {file="./CHANGELOG.md", search="<!-- next-url -->", replace="<!-- next-url -->\n[Unreleased]: https://github.com/jswrenn/scoped-trace/compare/{{tag_name}}...HEAD", exactly=1},
+]
+tag-name = "v{{version}}"
