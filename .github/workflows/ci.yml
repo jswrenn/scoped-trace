@@ -120,6 +120,9 @@ jobs:
     - name: Check
       run: cargo +${{ env.CRATE_TOOLCHAIN }} check --target ${{ matrix.target }} --all-targets --verbose
 
+    - name: Check
+      run: cargo +${{ env.CRATE_TOOLCHAIN }} check --target ${{ matrix.target }} --all-targets --verbose
+
     - name: Test
       run: cargo +${{ env.CRATE_TOOLCHAIN }} test --target ${{ matrix.target }} --verbose
       # Only run tests when targetting x86 (32- or 64-bit) - we're executing on
@@ -147,10 +150,15 @@ jobs:
     name: cargo clippy
     steps:
       - uses: actions/checkout@v3
-      - name: Install Rust (nightly)
+      - name: Set toolchain version
+        run: |
+          set -e
+          CRATE_TOOLCHAIN="$(cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "scoped-trace").rust_version')"
+          echo "CRATE_TOOLCHAIN=$CRATE_TOOLCHAIN" >> $GITHUB_ENV
+      - name: Install Rust (msrv)
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: msrv
+          toolchain: ${{ env.CRATE_TOOLCHAIN }}
           override: true
           components: clippy
       - name: Rust Cache
@@ -167,7 +175,6 @@ jobs:
       - uses: actions/checkout@v3
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2.0.0
-      - uses: extractions/setup-just@v1
       - name: cargo rdme --check
         run: |
           set -e

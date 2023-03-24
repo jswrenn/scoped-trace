@@ -11,7 +11,7 @@
 //!
 //! For example, running this program:
 //! ```
-//! use scoped_tree_trace::Trace;
+//! use scoped_trace::Trace;
 //!
 //! fn main() {
 //!     let (_, trace) = Trace::root(|| foo());
@@ -182,13 +182,18 @@ impl Context {
 }
 
 fn defer<F: FnOnce() -> R, R>(f: F) -> impl Drop {
-    struct Defer<F: FnOnce() -> R, R>(Option<F>);
+    use std::mem::ManuallyDrop;
+
+    struct Defer<F: FnOnce() -> R, R>(ManuallyDrop<F>);
 
     impl<F: FnOnce() -> R, R> Drop for Defer<F, R> {
+        #[inline(always)]
         fn drop(&mut self) {
-            self.0.take().unwrap()();
+            unsafe {
+                ManuallyDrop::take(&mut self.0)();
+            }
         }
     }
 
-    Defer(Some(f))
+    Defer(ManuallyDrop::new(f))
 }
