@@ -17,7 +17,7 @@ invocation of [`Trace::root`] may have multiple sub-invocations of
 
 For example, running this program:
 ```rust
-use scoped_tree_trace::Trace;
+use scoped_trace::Trace;
 
 fn main() {
     let (_, trace) = Trace::root(|| foo());
