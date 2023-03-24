@@ -6,6 +6,9 @@
 //! invocation of [`Trace::root`] may have multiple sub-invocations of
 //! [`Trace::leaf`].
 //!
+//! [`Trace::root`]: crate::Trace::root
+//! [`Trace::leaf`]: crate::Trace::leaf
+//!
 //! For example, running this program:
 //! ```
 //! use scoped_tree_trace::Trace;

@@ -168,11 +168,11 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2.0.0
       - uses: extractions/setup-just@v1
-      - name: cargo doc2readme --check
+      - name: cargo rdme --check
         run: |
           set -e
-          cargo install cargo-readme --version 0.2.4
-          cargo doc2readme --check;
+          cargo install cargo-rdme --version 1.4.0
+          cargo rdme --check;
           exit $?
 
   ci-success:

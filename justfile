@@ -5,4 +5,4 @@ fmt:
     cargo +nightly fmt
 
 readme:
-    cargo doc2readme
+    cargo rdme --force
