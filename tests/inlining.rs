@@ -21,11 +21,12 @@ fn inlining() {
     let (_, trace) = Trace::root(|| foo());
     assert_eq!(
         format!("{trace}"),
-        "\
-╼ inlining::inlining::{{closure}} at /home/ubuntu/projects/scoped-trace/tests/inlining.rs:21:37
-  ├╼ inlining::foo at /home/ubuntu/projects/scoped-trace/tests/inlining.rs:4:5
-  │  └╼ inlining::bar at /home/ubuntu/projects/scoped-trace/tests/inlining.rs:10:5
-  └╼ inlining::foo at /home/ubuntu/projects/scoped-trace/tests/inlining.rs:5:5
-     └╼ inlining::baz at /home/ubuntu/projects/scoped-trace/tests/inlining.rs:15:5"
+        format!("\
+╼ inlining::inlining::{{{{closure}}}} at {file}:21:37
+  ├╼ inlining::foo at {file}:4:5
+  │  └╼ inlining::bar at {file}:10:5
+  └╼ inlining::foo at {file}:5:5
+     └╼ inlining::baz at {file}:15:5",
+        file=format!(concat!(env!("CARGO_MANIFEST_DIR"), "{}", file!()), std::path::MAIN_SEPARATOR))
     );
 }
