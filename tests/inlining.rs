@@ -18,7 +18,7 @@ fn baz() {
 #[allow(clippy::redundant_closure)]
 #[test]
 fn inlining() {
-    let (_, trace) = Trace::root(|| foo());
+    let (_, trace) = Trace::capture(|| foo());
     assert_eq!(
         format!("{trace}"),
         format!(

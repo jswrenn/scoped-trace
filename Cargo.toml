@@ -12,6 +12,7 @@ categories = ["development-tools::debugging"]
 [dependencies]
 backtrace = "0.3"
 indexmap = "1.9.2"
+pin-project-lite = "0.2.9"
 
 [package.metadata.release]
 pre-release-replacements = [

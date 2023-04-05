@@ -1,22 +1,25 @@
-use scoped_trace::Trace;
+use std::pin::pin;
+
+use scoped_trace::{Trace};
 
 #[allow(clippy::redundant_closure)]
 fn main() {
-    let (_, trace) = Trace::root(|| foo());
+    let (_, trace) = Trace::capture(|| foo());
     println!("{trace}");
 }
 
+#[inline(never)]
 fn foo() {
     bar();
+}
+
+#[inline(never)]
+fn bar() {
     baz();
 }
 
-#[inline(always)]
-fn bar() {
-    Trace::leaf();
-}
-
-#[inline(always)]
+#[inline(never)]
 fn baz() {
     Trace::leaf();
+    println!("HI");
 }

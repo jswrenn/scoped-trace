@@ -41,7 +41,7 @@
 //! ```
 
 use backtrace::BacktraceFrame;
-use std::{cell::Cell, ffi::c_void, fmt, ptr};
+use std::{cell::Cell, ffi::c_void, fmt, ptr::{self, NonNull}};
 
 mod symbol;
 mod tree;
@@ -52,7 +52,59 @@ use tree::Tree;
 type Backtrace = Vec<BacktraceFrame>;
 type SymbolTrace = Vec<Symbol>;
 
-/// An execution trace.
+/// A [`Frame`] in an intrusive, doubly-linked tree of [`Frame`]s.
+pub(crate) struct Frame {
+    // The location associated with this frame.
+    inner_addr: *const c_void,
+
+    // The kind of this frame — either a root or a node.
+    parent: Option<NonNull<Frame>>,
+}
+
+/// The ambiant backtracing context.
+pub(crate) struct Context {
+    /// The address of [`Trace::root`] establishes an upper unwinding bound on
+    /// the backtraces in `Trace`.
+    active_frame: Cell<Option<NonNull<Frame>>>,
+    /// The collection of backtraces collected beneath the invocation of
+    /// [`Trace::root`].
+    trace: Cell<Option<Trace>>,
+}
+
+impl Context {
+    pub(crate) unsafe fn with_current<F, R>(f: F) -> R
+    where
+        F: FnOnce(&Self) -> R,
+    {
+        std::thread_local! {
+            #[allow(clippy::declare_interior_mutable_const)]
+            static CONTEXT: Context = const { 
+                Context {
+                    active_frame: Cell::new(None),
+                    trace: Cell::new(None),
+                }
+            };
+        }
+        CONTEXT.with(f)
+    }
+
+    pub(crate) unsafe fn with_current_frame<F, R>(f: F) -> R
+    where
+        F: FnOnce(&Cell<Option<NonNull<Frame>>>) -> R,
+    {
+        Self::with_current(|context| f(&context.active_frame))
+    }
+
+    pub(crate) fn with_current_collector<F, R>(f: F) -> R
+    where
+        F: FnOnce(&Cell<Option<Trace>>) -> R,
+    {
+        unsafe { Self::with_current(|context| f(&context.trace)) }
+    }
+}
+
+
+/// An tree execution trace.
 ///
 /// This trace is constructed by calling [`Trace::root`] with a closure, and
 /// includes all execution Trace of that closure that end in an invocation of
@@ -64,47 +116,56 @@ pub struct Trace {
     backtraces: Vec<Backtrace>,
 }
 
-/// The ambiant backtracing context.
-struct Context {
-    /// The address of [`Trace::root`] establishes an upper unwinding bound on
-    /// the backtraces in `Trace`.
-    root_addr: *const c_void,
-    /// The collection of backtraces collected beneath the invocation of
-    /// [`Trace::root`].
-    trace: Trace,
-}
-
 impl Trace {
     /// Invokes `f`, returning both its result and the collection of backtraces
     /// captured at each sub-invocation of [`Trace::leaf`].
-    pub fn root<F, R>(f: F) -> (R, Trace)
-    where
-        F: FnOnce() -> R,
-    {
-        // initialize the current backtracing context with an empty `Context`.
-        Context::with_current(|cell| Self::root_inner(f, cell))
-    }
-
-    // This function is marked `#[inline(never)]` to ensure that it gets a distinct
-    // `Frame` in the backtrace, above which we do not need to unwind.
     #[inline(never)]
-    fn root_inner<F, R>(f: F, cell: &Cell<Option<Context>>) -> (R, Trace)
+    pub fn capture<F, R>(f: F) -> (R, Trace)
     where
         F: FnOnce() -> R,
     {
-        cell.set(Some(Context::new::<F, R>()));
+        let collector = Trace {
+            backtraces: vec![],
+        };
 
-        // if `f()` panics, reset the ambiant context to `None`.
-        let _deferred = defer(|| {
-            cell.set(None);
+        let previous = Context::with_current_collector(|current| {
+            current.replace(Some(collector))
         });
 
-        let result = f();
+        let result = Trace::root(f);
 
-        // take the resulting `Trace` and return it.
-        let context = cell.take().unwrap();
+        let collector =
+            Context::with_current_collector(|current| {
+                current.replace(previous)
+            }).unwrap();
 
-        (result, context.trace)
+        (result, collector)
+    }
+
+    #[inline(never)]
+    pub fn root<F, R>(f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        unsafe {
+            let mut frame = Frame {
+                inner_addr: Self::root::<F, R> as *const c_void,
+                parent: None,
+            };
+
+            Context::with_current_frame(|current| {
+                frame.parent = current.take();
+                current.set(Some(NonNull::from(&frame)));
+            });
+
+            let _restore = crate::defer(|| {
+                Context::with_current_frame(|current| {
+                    current.set(frame.parent);
+                });
+            });
+
+            f()
+        }
     }
 
     /// If this is a sub-invocation of [`Trace::root`], capture a backtrace.
@@ -118,66 +179,44 @@ impl Trace {
     // internal implementation details of this crate).
     #[inline(never)]
     pub fn leaf() {
+        unsafe {
         Context::with_current(|context_cell| {
-            if let Some(mut context) = context_cell.take() {
+            if let Some(mut collector) = context_cell.trace.take() {
                 let mut frames = vec![];
                 let mut above_leaf = false;
-                backtrace::trace(|frame| {
-                    let below_root = !ptr::eq(frame.symbol_address(), context.root_addr);
+ 
+                if let Some(active_frame) = context_cell.active_frame.get() {
+                    let active_frame = active_frame.as_ref();
 
-                    // only capture frames above `Trace::leaf()` and below
-                    // `Trace::root_inner()`.
-                    if above_leaf && below_root {
-                        frames.push(frame.to_owned().into());
-                    }
+                    backtrace::trace(|frame| {
+                        println!("boom!");
+                        let below_root = !ptr::eq(frame.symbol_address(), active_frame.inner_addr);
 
-                    if ptr::eq(frame.symbol_address(), Self::leaf as *const _) {
-                        above_leaf = true;
-                    }
+                        // only capture frames above `Trace::leaf()` and below
+                        // `Trace::root_inner()`.
+                        if dbg!(above_leaf) && dbg!(below_root) {
+                            frames.push(frame.to_owned().into());
+                        }
 
-                    // only continue unwinding if we're below `Trace::root`
-                    below_root
-                });
-                context.trace.backtraces.push(frames);
-                context_cell.set(Some(context));
+                        if ptr::eq(frame.symbol_address(), Self::leaf as *const _) {
+                            above_leaf = true;
+                        }
+
+                        // only continue unwinding if we're below `Trace::root`
+                        dbg!(below_root)
+                    });
+                }
+                collector.backtraces.push(frames);
+                context_cell.trace.set(Some(collector));
             }
         });
+        }
     }
 }
 
 impl fmt::Display for Trace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Tree::from_trace(self.clone()).fmt(f)
-    }
-}
-
-impl Context {
-    /// Constructs a new, empty ambient backtracing context.
-    fn new<F, R>() -> Self
-    where
-        F: FnOnce() -> R,
-    {
-        // the address of this function is used to establish an upper unwinding bound
-        let root_addr = Trace::root_inner::<F, R> as *const c_void;
-
-        Self {
-            root_addr,
-            trace: Trace { backtraces: vec![] },
-        }
-    }
-
-    /// Manipulate the current active backtracing context.
-    fn with_current<F, R>(f: F) -> R
-    where
-        F: FnOnce(&Cell<Option<Context>>) -> R,
-    {
-        thread_local! {
-            /// The current ambiant backtracing context, if any.
-            #[allow(clippy::declare_interior_mutable_const)]
-            static CURRENT_CONTEXT: Cell<Option<Context>> = const { Cell::new(None) };
-        }
-
-        CURRENT_CONTEXT.with(f)
     }
 }
 
